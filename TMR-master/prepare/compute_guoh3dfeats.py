@@ -44,7 +44,7 @@ def compute_guoh3dfeats(cfg: DictConfig):
     force_redo = cfg.force_redo
 
     from src.guofeats import joints_to_guofeats
-    from .tools import loop_amass
+    from prepare.tools import loop_amass
 
     output_folder_M = os.path.join(output_folder, "M")
 
