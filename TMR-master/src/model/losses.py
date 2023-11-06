@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 
 
 # For reference
@@ -20,15 +21,20 @@ class KLLoss:
 
 
 class InfoNCE_with_filtering:
-    def __init__(self, temperature=0.7, threshold_selfsim=0.8):
+    def __init__(self, temperature=0.7, threshold_selfsim=0.8,dual_soft=0):
         self.temperature = temperature
         self.threshold_selfsim = threshold_selfsim
+        self.dual_soft=dual_soft
+
 
     def get_sim_matrix(self, x, y):
         x_logits = torch.nn.functional.normalize(x, dim=-1)
         y_logits = torch.nn.functional.normalize(y, dim=-1)
         sim_matrix = x_logits @ y_logits.T
-        return sim_matrix
+        if (self.dual_soft == 0):
+            return sim_matrix
+        else:
+            return F.softmax(sim_matrix, dim=1) @ F.softmax(sim_matrix, dim=0)
 
     def __call__(self, x, y, sent_emb=None):
         bs, device = len(x), x.device

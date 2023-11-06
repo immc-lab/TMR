@@ -6,6 +6,7 @@ import torch.nn as nn
 from .temos import TEMOS
 from .losses import InfoNCE_with_filtering
 from .metrics import all_contrastive_metrics
+import torch.nn.functional as F
 
 
 # x.T will be deprecated in pytorch
@@ -17,11 +18,16 @@ def get_sim_matrix(x, y):
     x_logits = torch.nn.functional.normalize(x, dim=-1)
     y_logits = torch.nn.functional.normalize(y, dim=-1)
     sim_matrix = x_logits @ transpose(y_logits)
-    return sim_matrix
+    dual_soft = 1
+    #    sim_matrix = torch.nn.functional.softmax(sim_matrix,dim=1) @ torch.nn.functional.softmax(sim_matrix,dim=0)
+    if (dual_soft == 0):
+        return sim_matrix
+    else:
+        return F.softmax(sim_matrix, dim=1) @ F.softmax(sim_matrix, dim=0)
 
 
 # Scores are between 0 and 1
-def get_score_matrix(x, y):
+def get_score_matrix(x, y, dual_soft=0):
     sim_matrix = get_sim_matrix(x, y)
     scores = sim_matrix / 2 + 0.5
     return scores
@@ -48,18 +54,20 @@ class TMR(TEMOS):
     """
 
     def __init__(
-        self,
-        motion_encoder: nn.Module,
-        text_encoder: nn.Module,
-        motion_decoder: nn.Module,
-        vae: bool,
-        fact: Optional[float] = None,
-        sample_mean: Optional[bool] = False,
-        lmd: Dict = {"recons": 1.0, "latent": 1.0e-5, "kl": 1.0e-5, "contrastive": 0.1},
-        lr: float = 1e-4,
-        temperature: float = 0.7,
-        threshold_selfsim: float = 0.80,
-        threshold_selfsim_metrics: float = 0.95,
+            self,
+            motion_encoder: nn.Module,
+            text_encoder: nn.Module,
+            motion_decoder: nn.Module,
+            vae: bool,
+            fact: Optional[float] = None,
+            sample_mean: Optional[bool] = False,
+            lmd: Dict = {"recons": 1.0, "latent": 1.0e-5, "kl": 1.0e-5, "contrastive": 0.1},
+            lr: float = 1e-4,
+            temperature: float = 0.7,
+            threshold_selfsim: float = 0.80,
+            threshold_selfsim_metrics: float = 0.95,
+            dual_soft: int = 0
+
     ) -> None:
         # Initialize module like TEMOS
         super().__init__(
@@ -75,7 +83,7 @@ class TMR(TEMOS):
 
         # adding the contrastive loss
         self.contrastive_loss_fn = InfoNCE_with_filtering(
-            temperature=temperature, threshold_selfsim=threshold_selfsim
+            temperature=temperature, threshold_selfsim=threshold_selfsim, dual_soft=dual_soft
         )
         self.threshold_selfsim_metrics = threshold_selfsim_metrics
 
@@ -107,8 +115,8 @@ class TMR(TEMOS):
         # Reconstructions losses
         # fmt: off
         losses["recons"] = (
-            + self.reconstruction_loss_fn(t_motions, ref_motions) # text -> motion
-            + self.reconstruction_loss_fn(m_motions, ref_motions) # motion -> motion
+                + self.reconstruction_loss_fn(t_motions, ref_motions)  # text -> motion
+                + self.reconstruction_loss_fn(m_motions, ref_motions)  # motion -> motion
         )
         # fmt: on
 
@@ -121,10 +129,10 @@ class TMR(TEMOS):
             ref_dists = (ref_mus, ref_logvar)
 
             losses["kl"] = (
-                self.kl_loss_fn(t_dists, m_dists)  # text_to_motion
-                + self.kl_loss_fn(m_dists, t_dists)  # motion_to_text
-                + self.kl_loss_fn(m_dists, ref_dists)  # motion
-                + self.kl_loss_fn(t_dists, ref_dists)  # text
+                    self.kl_loss_fn(t_dists, m_dists)  # text_to_motion
+                    + self.kl_loss_fn(m_dists, t_dists)  # motion_to_text
+                    + self.kl_loss_fn(m_dists, ref_dists)  # motion
+                    + self.kl_loss_fn(t_dists, ref_dists)  # text
             )
 
         # Latent manifold loss
@@ -172,7 +180,7 @@ class TMR(TEMOS):
         sent_emb = torch.cat(self.validation_step_sent_emb)
 
         # Compute the similarity matrix
-        sim_matrix = get_sim_matrix(t_latents, m_latents).cpu().numpy()
+        sim_matrix = get_sim_matrix(t_latents, m_latents, ).cpu().numpy()
 
         contrastive_metrics = all_contrastive_metrics(
             sim_matrix,
