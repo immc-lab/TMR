@@ -14,3 +14,4 @@ lr: 1e-4
 temperature: 0.1
 threshold_selfsim: 0.80
 threshold_selfsim_metrics: 0.95
+dual_soft: 1
