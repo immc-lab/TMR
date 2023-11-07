@@ -2,6 +2,7 @@ import os
 import logging
 import hydra
 from omegaconf import DictConfig
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 import numpy as np
 

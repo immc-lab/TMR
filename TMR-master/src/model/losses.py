@@ -34,7 +34,7 @@ class InfoNCE_with_filtering:
         if (self.dual_soft == 0):
             return sim_matrix
         else:
-            return F.softmax(sim_matrix, dim=1) @ F.softmax(sim_matrix, dim=0)
+            return F.softmax(sim_matrix, dim=1) * F.softmax(sim_matrix, dim=0)
 
     def __call__(self, x, y, sent_emb=None):
         bs, device = len(x), x.device

@@ -18,12 +18,12 @@ def get_sim_matrix(x, y):
     x_logits = torch.nn.functional.normalize(x, dim=-1)
     y_logits = torch.nn.functional.normalize(y, dim=-1)
     sim_matrix = x_logits @ transpose(y_logits)
-    dual_soft = 1
+    dual_soft = 0
     #    sim_matrix = torch.nn.functional.softmax(sim_matrix,dim=1) @ torch.nn.functional.softmax(sim_matrix,dim=0)
     if (dual_soft == 0):
         return sim_matrix
     else:
-        return F.softmax(sim_matrix, dim=1) @ F.softmax(sim_matrix, dim=0)
+        return F.softmax(sim_matrix, dim=1) * F.softmax(sim_matrix, dim=0)
 
 
 # Scores are between 0 and 1
