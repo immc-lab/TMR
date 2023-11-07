@@ -23,7 +23,7 @@ def get_sim_matrix(x, y):
     if (dual_soft == 0):
         return sim_matrix
     else:
-        return F.softmax(sim_matrix, dim=1) * F.softmax(sim_matrix, dim=0)
+        return F.softmax(sim_matrix, dim=1) *  F.softmax(sim_matrix, dim=0)
 
 
 # Scores are between 0 and 1
