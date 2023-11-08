@@ -13,7 +13,7 @@ def save_metric(path, metrics):
     with open(path, "w") as f:
         f.write(strings)
 
-
+#retrieval时batch—_size==244
 def compute_sim_matrix(model, dataset, keyids, batch_size=256):
     import torch
     import numpy as np
