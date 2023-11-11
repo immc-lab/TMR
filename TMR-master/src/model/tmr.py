@@ -7,7 +7,10 @@ from .temos import TEMOS
 from .losses import InfoNCE_with_filtering
 from .metrics import all_contrastive_metrics
 import torch.nn.functional as F
-
+from src.model.probemb import MCSoftContrastiveLoss
+from torch.cuda import amp
+import wandb
+wandb.init(project="my-project")
 
 # x.T will be deprecated in pytorch
 def transpose(x):
@@ -66,7 +69,13 @@ class TMR(TEMOS):
             temperature: float = 0.7,
             threshold_selfsim: float = 0.80,
             threshold_selfsim_metrics: float = 0.95,
-            dual_soft: int = 0
+            dual_soft: int = 0,
+            init_negative_scale: float=1,
+            init_shift: float=40,
+            num_samples: int=7,
+            vib_beta: float=0.00001,
+            soft_contrastive=0
+
 
     ) -> None:
         # Initialize module like TEMOS
@@ -80,11 +89,13 @@ class TMR(TEMOS):
             lmd=lmd,
             lr=lr,
         )
-
+        self.soft_contrastive=soft_contrastive
         # adding the contrastive loss
         self.contrastive_loss_fn = InfoNCE_with_filtering(
             temperature=temperature, threshold_selfsim=threshold_selfsim, dual_soft=dual_soft
         )
+        self.soft_contrastive_loss = MCSoftContrastiveLoss(init_negative_scale=init_negative_scale, init_shift=init_shift, num_samples=num_samples,
+                                                           uniform_lambda=10, vib_beta=vib_beta, reduction="sum")
         self.threshold_selfsim_metrics = threshold_selfsim_metrics
 
         # store validation values to compute retrieval metrics
@@ -104,10 +115,13 @@ class TMR(TEMOS):
         sent_emb = batch["sent_emb"]
 
         # text -> motion
-        t_motions, t_latents, t_dists = self(text_x_dict, mask=mask, return_all=True)
 
+        t_motions, t_latents, t_samples, t_logsigma, t_dists = self(text_x_dict, mask=mask, return_all=True)
+        # t_samples(32,7,256)   t_logsigma (32,256)
         # motion -> motion
-        m_motions, m_latents, m_dists = self(motion_x_dict, mask=mask, return_all=True)
+        m_motions, m_latents, m_samples, m_logsigma, m_dists = self(motion_x_dict, mask=mask, return_all=True)
+
+
 
         # Store all losses
         losses = {}
@@ -134,17 +148,23 @@ class TMR(TEMOS):
                     + self.kl_loss_fn(m_dists, ref_dists)  # motion
                     + self.kl_loss_fn(t_dists, ref_dists)  # text
             )
-
+        scaler = amp.GradScaler()
         # Latent manifold loss
         losses["latent"] = self.latent_loss_fn(t_latents, m_latents)
-
+        if (self.soft_contrastive == 1):
+            losses["soft_contrastive"] = 0.000001*self.soft_contrastive_loss(m_samples, t_samples, m_logsigma, t_logsigma)
+        else:
+            losses["soft_contrastive"]=0
+        #losses["soft_contrastive"] = scaler.scale(losses["soft_contrastive"]) #LOSSsuofang
         # TMR: adding the contrastive loss
         losses["contrastive"] = self.contrastive_loss_fn(t_latents, m_latents, sent_emb)
 
         # Weighted average of the losses
         losses["loss"] = sum(
             self.lmd[x] * val for x, val in losses.items() if x in self.lmd
-        )
+        )+ losses["soft_contrastive"]
+        wandb.log(losses)
+
 
         # Used for the validation step
         if return_all:
@@ -187,6 +207,7 @@ class TMR(TEMOS):
             emb=sent_emb.cpu().numpy(),
             threshold=self.threshold_selfsim_metrics,
         )
+        wandb.log(contrastive_metrics)
 
         for loss_name in sorted(contrastive_metrics):
             loss_val = contrastive_metrics[loss_name]
