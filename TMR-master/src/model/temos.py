@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 import torch
 import torch.nn as nn
 from torch import Tensor
+import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 
 from src.model.losses import KLLoss
@@ -116,19 +117,27 @@ class TEMOS(LightningModule):
         if self.vae:
             dists = encoded.unbind(1)
             mu, logvar = dists
+            #mu=F.normalize(mu, p=2, dim=-1)
+            #dists=(mu,logvar)
+            logsigma = logvar
             if sample_mean:
                 latent_vectors = mu
             else:
                 # Reparameterization trick
-                std = logvar.exp().pow(0.5)
-                eps = std.data.new(std.size()).normal_()
-                latent_vectors = mu + fact * eps * std
+                eps = torch.randn(mu.size(0), 7, mu.size(1), dtype=mu.dtype, device=mu.device)
+                samples = eps.mul(logvar.unsqueeze(1)).add_(
+                    mu.unsqueeze(1))
+                latent_vectors = torch.mean(samples, dim=1)
+                #std = logvar.exp().pow(0.5)
+                #eps = std.data.new(std.size()).normal_()
+
+                #latent_vectors = mu + fact * eps * std
         else:
             dists = None
             (latent_vectors,) = encoded.unbind(1)
 
         if return_distribution:
-            return latent_vectors, dists
+            return latent_vectors, samples,logsigma, dists
 
         return latent_vectors
 
@@ -154,14 +163,14 @@ class TEMOS(LightningModule):
         return_all: bool = False,
     ) -> List[Tensor]:
         # Encoding the inputs and sampling if needed
-        latent_vectors, distributions = self.encode(
+        latent_vectors, samples, logsigma, distributions = self.encode(
             inputs, sample_mean=sample_mean, fact=fact, return_distribution=True
         )
         # Decoding the latent vector: generating motions
         motions = self.decode(latent_vectors, lengths, mask)
 
         if return_all:
-            return motions, latent_vectors, distributions
+            return motions, latent_vectors,samples,logsigma, distributions
 
         return motions
 
