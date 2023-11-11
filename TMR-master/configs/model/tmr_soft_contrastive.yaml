@@ -1,0 +1,23 @@
+defaults:
+  - temos
+  - _self_
+
+_target_: src.model.TMR
+
+lmd:
+  recons: 1.0
+  latent: 1.0e-5
+  kl: 1.0e-5
+  contrastive: 0.1
+
+lr: 1e-4
+temperature: 0.1
+threshold_selfsim: 0.80
+threshold_selfsim_metrics: 0.95
+dual_soft: 0
+init_negative_scale: 0
+init_shift: 40
+num_samples: 7
+vib_beta: 0.00001
+soft_contrastive: 1
+
