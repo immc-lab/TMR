@@ -15,3 +15,5 @@ temperature: 0.1
 threshold_selfsim: 0.80
 threshold_selfsim_metrics: 0.95
 dual_soft: 0
+soft_contrastive: 0
+
