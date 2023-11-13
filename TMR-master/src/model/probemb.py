@@ -145,8 +145,14 @@ class MCSoftContrastiveLoss(nn.Module):
             x = x[indices]
         return torch.pdist(x, p=2).pow(2).mul(-t).exp().mean().log()
 
-    #def kl_divergence(self, mu, logsigma):
-        return -0.5 * (1 + logsigma - mu.pow(2) - logsigma.exp()).sum()
+    def kl_divergence(self, mu, logsigma):
+        ref_mus = torch.zeros_like(logsigma[0])
+        ref_logvar = torch.zeros_like(logsigma[1])
+        log_var_ratio = logsigma - ref_logvar
+        t1 = (ref_mus - mu).pow(2) / ref_logvar.exp()
+        div = 0.5 * (log_var_ratio.exp() + t1 - 1 - log_var_ratio)
+
+        return div.mean()
 
     def pairwise_sampling(self, anchors, candidates):
         N = len(anchors)  #32
@@ -231,15 +237,15 @@ class MCSoftContrastiveLoss(nn.Module):
             uniform_loss_val = uniform_loss.item()
         sampled_image_features, sampled_caption_features = image_features, caption_features
 
-       # if self.vib_beta != 0:
-        #    vib_loss =\
-         #      self.kl_divergence(image_features.mean(dim=1), image_logsigma) + self.kl_divergence(caption_features.mean(dim=1), caption_logsigma)
-          #  vib_loss_val = vib_loss.item()
+        if self.vib_beta != 0:
+            vib_loss =\
+               self.kl_divergence(image_features.mean(dim=1), image_logsigma) + self.kl_divergence(caption_features.mean(dim=1), caption_logsigma)
+            vib_loss_val = vib_loss.item()
 
         i2t_loss = self._compute_loss(sampled_image_features, sampled_caption_features)
         t2i_loss = self._compute_loss(sampled_caption_features, sampled_image_features)
-        #loss = i2t_loss['loss'] + t2i_loss['loss'] + self.uniform_lambda * uniform_loss + self.vib_beta * vib_loss
-        loss=i2t_loss['loss'] + t2i_loss['loss']+self.uniform_lambda * uniform_loss
+        loss = i2t_loss['loss'] + t2i_loss['loss'] + self.uniform_lambda * uniform_loss + self.vib_beta * vib_loss
+        #loss=i2t_loss['loss'] + t2i_loss['loss']+self.uniform_lambda * uniform_loss
 
         loss_dict = {'i2t_loss': i2t_loss['loss'].item(),
                      't2i_loss': t2i_loss['loss'].item(),
@@ -248,7 +254,7 @@ class MCSoftContrastiveLoss(nn.Module):
                      't2i_pos_loss': t2i_loss['pos_loss'].item(),
                      't2i_neg_loss': t2i_loss['neg_loss'].item(),
                      'uniform_loss': uniform_loss_val,
-
+                        'vib_loss':vib_loss_val,
                      'shift': self.shift.item(),
                      'negative_scale': self.negative_scale.item(),
                      'loss': loss.item()}
