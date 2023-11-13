@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 import os
 from hydra.utils import instantiate
 from src.config import read_config, save_config
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def train(cfg: DictConfig):
 
     logger.info("Loading the dataloaders")
     train_dataset = instantiate(cfg.data, split="train")
-    val_dataset = instantiate(cfg.data, split="val")
+    val_dataset = instantiate(cfg.data, split="test")
 
     train_dataloader = instantiate(
         cfg.dataloader,
