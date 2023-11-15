@@ -105,10 +105,11 @@ class TEMOS(LightningModule):
         sample_mean: Optional[bool] = None,
         fact: Optional[float] = None,
         return_distribution: bool = False,
+        num_samples:int =10
     ):
         sample_mean = self.sample_mean if sample_mean is None else sample_mean
         fact = self.fact if fact is None else fact
-
+        self.num_samples=num_samples
         # Encode the inputs
         encoder = self._find_encoder(inputs, modality)
         encoded = encoder(inputs)
@@ -124,7 +125,7 @@ class TEMOS(LightningModule):
                 latent_vectors = mu
             else:
                 # Reparameterization trick
-                eps = torch.randn(mu.size(0), 7, mu.size(1), dtype=mu.dtype, device=mu.device)
+                eps = torch.randn(mu.size(0), self.num_samples, mu.size(1), dtype=mu.dtype, device=mu.device)
                 samples = eps.mul(logvar.unsqueeze(1)).add_(
                     mu.unsqueeze(1))
                 latent_vectors = torch.mean(samples, dim=1)
@@ -161,10 +162,11 @@ class TEMOS(LightningModule):
         sample_mean: Optional[bool] = None,
         fact: Optional[float] = None,
         return_all: bool = False,
+        num_samples:int =7
     ) -> List[Tensor]:
         # Encoding the inputs and sampling if needed
         latent_vectors, samples, logsigma, distributions = self.encode(
-            inputs, sample_mean=sample_mean, fact=fact, return_distribution=True
+            inputs, sample_mean=sample_mean, fact=fact, return_distribution=True,num_samples=num_samples
         )
         # Decoding the latent vector: generating motions
         motions = self.decode(latent_vectors, lengths, mask)
