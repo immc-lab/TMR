@@ -244,8 +244,8 @@ class MCSoftContrastiveLoss(nn.Module):
 
         i2t_loss = self._compute_loss(sampled_image_features, sampled_caption_features)
         t2i_loss = self._compute_loss(sampled_caption_features, sampled_image_features)
-        loss = i2t_loss['loss'] + t2i_loss['loss'] + self.uniform_lambda * uniform_loss + self.vib_beta * vib_loss
-        #loss=i2t_loss['loss'] + t2i_loss['loss']+self.uniform_lambda * uniform_loss
+        #loss = i2t_loss['loss'] + t2i_loss['loss'] + self.uniform_lambda * uniform_loss + self.vib_beta * vib_loss
+        loss=i2t_loss['loss'] + t2i_loss['loss']+self.uniform_lambda * uniform_loss
 
         loss_dict = {'i2t_loss': i2t_loss['loss'].item(),
                      't2i_loss': t2i_loss['loss'].item(),
@@ -254,7 +254,7 @@ class MCSoftContrastiveLoss(nn.Module):
                      't2i_pos_loss': t2i_loss['pos_loss'].item(),
                      't2i_neg_loss': t2i_loss['neg_loss'].item(),
                      'uniform_loss': uniform_loss_val,
-                        'vib_loss':vib_loss_val,
+                      #'vib_loss':vib_loss_val,
                      'shift': self.shift.item(),
                      'negative_scale': self.negative_scale.item(),
                      'loss': loss.item()}

@@ -11,6 +11,6 @@ dataloader:
 defaults:
   - data: humanml3d
   - model: tmr
-  - trainer
+  - trainer_best_epoch
   - defaults
   - _self_

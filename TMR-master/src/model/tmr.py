@@ -11,7 +11,7 @@ from src.model.probemb import MCSoftContrastiveLoss
 from torch.cuda import amp
 import wandb
 
-wandb.init(project="TMR", name="TMR(w/o latent,mse,kl)+pcme")
+wandb.init(project="TMR", name="TMR+cl(w/o nega)+pcme")
 
 
 # x.T will be deprecated in pytorch
@@ -92,6 +92,7 @@ class TMR(TEMOS):
             lmd=lmd,
             lr=lr,
         )
+        self.proj = nn.Linear(768, 256)
         self.soft_contrastive = soft_contrastive
         self.num_samples = num_samples
         # adding the contrastive loss
@@ -119,6 +120,7 @@ class TMR(TEMOS):
 
         # sentence embeddings
         sent_emb = batch["sent_emb"]
+        #sent_emb1 = self.proj(sent_emb)
 
         # text -> motion
 
@@ -131,6 +133,7 @@ class TMR(TEMOS):
 
         # Store all losses
         losses = {}
+        #losses["contrastive_clip"] = self.contrastive_loss_fn(sent_emb, m_dists[0], sent_emb1)
 
         # Reconstructions losses
         # fmt: off
@@ -168,23 +171,29 @@ class TMR(TEMOS):
         # Weighted average of the losses
         losses["loss"] = sum(
             self.lmd[x] * val for x, val in losses.items() if x in self.lmd
-        ) + 0.00001 * losses["soft_contrastive"]
+        )
         wandb.log(losses)
 
         # Used for the validation step
         if return_all:
-            return losses, t_latents, m_latents
+            return losses, t_latents, m_latents,t_samples,m_samples
 
         return losses
 
     def validation_step(self, batch: Dict, batch_idx: int) -> Tensor:
         bs = len(batch["motion_x_dict"]["x"])
-        losses, t_latents, m_latents = self.compute_loss(batch, return_all=True)
+        losses, t_latents, m_latents, t_samples,m_samples= self.compute_loss(batch, return_all=True)
 
         # Store the latent vectors
         self.validation_step_t_latents.append(t_latents)
         self.validation_step_m_latents.append(m_latents)
         self.validation_step_sent_emb.append(batch["sent_emb"])
+
+        #self.validation_step_t_latents.append(t_samples)
+        #self.validation_step_m_latents.append(m_samples)
+        #
+
+
 
         for loss_name in sorted(losses):
             loss_val = losses[loss_name]
@@ -203,6 +212,9 @@ class TMR(TEMOS):
         t_latents = torch.cat(self.validation_step_t_latents)
         m_latents = torch.cat(self.validation_step_m_latents)
         sent_emb = torch.cat(self.validation_step_sent_emb)
+
+        #pmm = MatchingProbModule(self.criterion.match_prob)
+        #pmm.set_g_features(g_features)
 
         # Compute the similarity matrix
         sim_matrix = get_sim_matrix(t_latents, m_latents, ).cpu().numpy()

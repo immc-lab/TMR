@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 import os
 from hydra.utils import instantiate
 from src.config import read_config, save_config
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,10 @@ import os
 from omegaconf import DictConfig
 import logging
 import hydra
+import torch
 import yaml
 from tqdm import tqdm
+os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 
 logger = logging.getLogger(__name__)
 

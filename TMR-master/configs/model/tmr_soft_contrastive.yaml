@@ -15,9 +15,11 @@ temperature: 0.1
 threshold_selfsim: 0.80
 threshold_selfsim_metrics: 0.95
 dual_soft: 0
-init_negative_scale: 0
-init_shift: 40
-num_samples: 7
+init_negative_scale: 5
+init_shift: 5
+num_samples: 10
 vib_beta: 0.00001
 soft_contrastive: 1
+uniform_lambda: 10
+reduction: "sum"
 
