@@ -100,6 +100,7 @@ class TEMOS(LightningModule):
     def encode(
         self,
         inputs,
+        text_emb,
         modality: str = "auto",
         sample_mean: Optional[bool] = None,
         fact: Optional[float] = None,
@@ -116,6 +117,9 @@ class TEMOS(LightningModule):
         if self.vae:
             dists = encoded.unbind(1)
             mu, logvar = dists
+            #if text_emb!=None:
+             #   mu=torch.add(mu,text_emb)
+              #  dists = (mu, logvar)
             if sample_mean:
                 latent_vectors = mu
             else:
@@ -123,6 +127,8 @@ class TEMOS(LightningModule):
                 std = logvar.exp().pow(0.5)
                 eps = std.data.new(std.size()).normal_()
                 latent_vectors = mu + fact * eps * std
+                if text_emb!=None:
+                    latent_vectors=latent_vectors+text_emb
         else:
             dists = None
             (latent_vectors,) = encoded.unbind(1)
@@ -147,6 +153,7 @@ class TEMOS(LightningModule):
     def forward(
         self,
         inputs,
+        text_emb,
         lengths: Optional[List[int]] = None,
         mask: Optional[Tensor] = None,
         sample_mean: Optional[bool] = None,
@@ -155,8 +162,9 @@ class TEMOS(LightningModule):
     ) -> List[Tensor]:
         # Encoding the inputs and sampling if needed
         latent_vectors, distributions = self.encode(
-            inputs, sample_mean=sample_mean, fact=fact, return_distribution=True
+            inputs,text_emb, sample_mean=sample_mean, fact=fact, return_distribution=True
         )
+
         # Decoding the latent vector: generating motions
         motions = self.decode(latent_vectors, lengths, mask)
 

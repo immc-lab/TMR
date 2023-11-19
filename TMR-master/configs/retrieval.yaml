@@ -10,3 +10,4 @@ threshold: 0.95 # threashold to compute (b)
 
 ckpt: last
 batch_size: 256
+#mu+text_embedding: 0

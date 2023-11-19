@@ -36,7 +36,8 @@ class InfoNCE_with_filtering:
 
         if sent_emb is not None and self.threshold_selfsim:
             # put the threshold value between -1 and 1
-            real_threshold_selfsim = 2 * self.threshold_selfsim - 1
+            real_threshold_selfsim = 0.85
+            sent_emb = torch.nn.functional.normalize(sent_emb, dim=-1)
             # Filtering too close values
             # mask them by putting -inf in the sim_matrix
             selfsim = sent_emb @ sent_emb.T

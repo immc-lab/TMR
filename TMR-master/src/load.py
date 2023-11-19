@@ -52,9 +52,8 @@ def load_model_from_cfg(cfg, ckpt_name="last", device="cpu", eval_mode=True):
     # motion_encoder / text_encoder / text_decoder
     pt_path = os.path.join(run_dir, f"{ckpt_name}_weights")
 
-    if not os.path.exists(pt_path):
-        logger.info("The extracted model is not found. Split into submodules..")
-        extract_ckpt(run_dir, ckpt_name)
+
+    extract_ckpt(run_dir, ckpt_name)
 
     for fname in os.listdir(pt_path):
         module_name, ext = os.path.splitext(fname)

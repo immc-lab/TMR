@@ -2,9 +2,10 @@ import os
 from omegaconf import DictConfig
 import logging
 import hydra
+import torch
 import yaml
 from tqdm import tqdm
-
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 logger = logging.getLogger(__name__)
 
 
@@ -14,11 +15,15 @@ def save_metric(path, metrics):
         f.write(strings)
 
 
-def compute_sim_matrix(model, dataset, keyids, batch_size=256):
+def compute_sim_matrix(model, dataset,proj, keyids, batch_size=256):
     import torch
     import numpy as np
     from src.data.collate import collate_text_motion
     from src.model.tmr import get_sim_matrix
+    import  clip
+    clip_device = "cuda" if torch.cuda.is_available() else "cpu"
+    clip_model, _ = clip.load("ViT-B/32", device=clip_device)
+
 
     device = model.device
 
@@ -31,6 +36,7 @@ def compute_sim_matrix(model, dataset, keyids, batch_size=256):
         latent_texts = []
         latent_motions = []
         sent_embs = []
+        sent_embs1 = []
         for data in tqdm(all_data_splitted, leave=False):
             batch = collate_text_motion(data, device=device)
 
@@ -38,22 +44,32 @@ def compute_sim_matrix(model, dataset, keyids, batch_size=256):
             text_x_dict = batch["text_x_dict"]
             motion_x_dict = batch["motion_x_dict"]
             sent_emb = batch["sent_emb"]
+            text = batch['text']
+            # tokenized计算
+            text_tokenized = clip.tokenize(text, truncate=True).to(clip_device)
+            with torch.no_grad():
+                # 计算sentence_feature，dim=512
+                text_emb = clip_model.encode_text(text_tokenized).float()
+            text_emb = proj(text_emb)
 
             # Encode both motion and text
-            latent_text = model.encode(text_x_dict, sample_mean=True)
-            latent_motion = model.encode(motion_x_dict, sample_mean=True)
+            latent_text = model.encode(text_x_dict,text_emb=text_emb, sample_mean=True)
+            latent_motion = model.encode(motion_x_dict, text_emb=None,sample_mean=True)
 
             latent_texts.append(latent_text)
             latent_motions.append(latent_motion)
-            sent_embs.append(sent_emb)
+            sent_embs.append(text_emb)
+            sent_embs1.append(sent_emb)
 
         latent_texts = torch.cat(latent_texts)
         latent_motions = torch.cat(latent_motions)
-        sent_embs = torch.cat(sent_embs)
+        #sent_embs = torch.cat(sent_embs)
+        #sent_embs=torch.nn.functional.normalize(sent_embs,dim=-1)
+        sent_embs1=torch.cat(sent_embs1)
         sim_matrix = get_sim_matrix(latent_texts, latent_motions)
     returned = {
         "sim_matrix": sim_matrix.cpu().numpy(),
-        "sent_emb": sent_embs.cpu().numpy(),
+        "sent_emb": sent_embs1.cpu().numpy(),
     }
     return returned
 
@@ -93,6 +109,9 @@ def retrieval(newcfg: DictConfig) -> None:
 
     logger.info("Loading the model")
     model = load_model_from_cfg(cfg, ckpt_name, eval_mode=True, device=device)
+    if model.proj !=None:
+        proj = model.proj
+
 
     datasets = {}
     results = {}
@@ -112,12 +131,12 @@ def retrieval(newcfg: DictConfig) -> None:
         if protocol not in results:
             if protocol in ["normal", "threshold"]:
                 res = compute_sim_matrix(
-                    model, dataset, dataset.keyids, batch_size=batch_size
+                    model, dataset, proj,dataset.keyids, batch_size=batch_size
                 )
                 results.update({key: res for key in ["normal", "threshold"]})
             elif protocol == "nsim":
                 res = compute_sim_matrix(
-                    model, dataset, dataset.keyids, batch_size=batch_size
+                    model, dataset,proj, dataset.keyids, batch_size=batch_size
                 )
                 results[protocol] = res
             elif protocol == "guo":
@@ -138,6 +157,7 @@ def retrieval(newcfg: DictConfig) -> None:
                     compute_sim_matrix(
                         model,
                         dataset,
+                        proj,
                         np.array(keyids)[idx_batch],
                         batch_size=batch_size,
                     )

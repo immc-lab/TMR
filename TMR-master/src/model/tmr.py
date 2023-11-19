@@ -1,11 +1,14 @@
 from typing import Dict, Optional
 from torch import Tensor
-
+import wandb
 import torch
+import clip
 import torch.nn as nn
+import torch.nn.functional as F
 from .temos import TEMOS
 from .losses import InfoNCE_with_filtering
 from .metrics import all_contrastive_metrics
+wandb.init(project="TMR_CLIP_text embedding", name="TMR （w/o latent_loss）+clip text_embedding(latent+text_embedding)+threshold=0.85+infer(mu)")
 
 
 # x.T will be deprecated in pytorch
@@ -17,7 +20,8 @@ def get_sim_matrix(x, y):
     x_logits = torch.nn.functional.normalize(x, dim=-1)
     y_logits = torch.nn.functional.normalize(y, dim=-1)
     sim_matrix = x_logits @ transpose(y_logits)
-    return sim_matrix
+    return F.softmax(sim_matrix, dim=1) * F.softmax(sim_matrix, dim=0)
+    #return sim_matrix
 
 
 # Scores are between 0 and 1
@@ -72,7 +76,13 @@ class TMR(TEMOS):
             lmd=lmd,
             lr=lr,
         )
-
+        #self.sentence_proj = nn.Sequential(
+        #    nn.ReLU(),
+        #    nn.Dropout(0.1),
+        #    nn.Linear(512, 256))
+        self.clip_device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.clip_model, _ = clip.load("ViT-B/32", device=self.clip_device)
+        self.proj = nn.Linear(512, 256)
         # adding the contrastive loss
         self.contrastive_loss_fn = InfoNCE_with_filtering(
             temperature=temperature, threshold_selfsim=threshold_selfsim
@@ -94,12 +104,25 @@ class TMR(TEMOS):
 
         # sentence embeddings
         sent_emb = batch["sent_emb"]
+        text=batch['text']
+        #tokenized计算
+        text_tokenized = clip.tokenize(text, truncate=True).to(self.clip_device)
+        with torch.no_grad():
+            #计算sentence_feature，dim=512
+            text_emb = self.clip_model.encode_text(text_tokenized).float()
+        text_emb = self.proj(text_emb)
+        #MOT中的处理方式
+
+        #sent_emb=self.sentence_proj(sent_emb)
+        #sent_emb=F.normalize(sent_emb,dim=1)
+
+
 
         # text -> motion
-        t_motions, t_latents, t_dists = self(text_x_dict, mask=mask, return_all=True)
+        t_motions, t_latents, t_dists = self(text_x_dict,text_emb=text_emb, mask=mask, return_all=True)
 
         # motion -> motion
-        m_motions, m_latents, m_dists = self(motion_x_dict, mask=mask, return_all=True)
+        m_motions, m_latents, m_dists = self(motion_x_dict,text_emb=None, mask=mask, return_all=True)
 
         # Store all losses
         losses = {}
@@ -126,31 +149,32 @@ class TMR(TEMOS):
                 + self.kl_loss_fn(m_dists, ref_dists)  # motion
                 + self.kl_loss_fn(t_dists, ref_dists)  # text
             )
-
+        #在mu上添加对比学习
+        #losses["CLIP contrastive"]=self.contrastive_loss_fn(t_dists[0], m_dists[0])
         # Latent manifold loss
-        losses["latent"] = self.latent_loss_fn(t_latents, m_latents)
+        #losses["latent"] = self.latent_loss_fn(t_latents, m_latents)
 
         # TMR: adding the contrastive loss
-        losses["contrastive"] = self.contrastive_loss_fn(t_latents, m_latents, sent_emb)
+        losses["contrastive"] = self.contrastive_loss_fn(t_latents, m_latents, text_emb)
 
         # Weighted average of the losses
         losses["loss"] = sum(
             self.lmd[x] * val for x, val in losses.items() if x in self.lmd
         )
+        wandb.log(losses)
 
         # Used for the validation step
         if return_all:
-            return losses, t_latents, m_latents
+            return losses, t_latents, m_latents,t_dists,m_dists
 
         return losses
 
     def validation_step(self, batch: Dict, batch_idx: int) -> Tensor:
         bs = len(batch["motion_x_dict"]["x"])
-        losses, t_latents, m_latents = self.compute_loss(batch, return_all=True)
-
+        losses, t_latents, m_latents,t_dists,m_dists = self.compute_loss(batch, return_all=True)  #返回的t_dists中是mu+text_EMBEDDING
         # Store the latent vectors
-        self.validation_step_t_latents.append(t_latents)
-        self.validation_step_m_latents.append(m_latents)
+        self.validation_step_t_latents.append(t_dists[0])
+        self.validation_step_m_latents.append(m_dists[0])
         self.validation_step_sent_emb.append(batch["sent_emb"])
 
         for loss_name in sorted(losses):
@@ -177,8 +201,14 @@ class TMR(TEMOS):
         contrastive_metrics = all_contrastive_metrics(
             sim_matrix,
             emb=sent_emb.cpu().numpy(),
-            threshold=self.threshold_selfsim_metrics,
+            threshold=None,
         )
+        Rsum = contrastive_metrics['t2m/R01'] + contrastive_metrics['t2m/R02'] + contrastive_metrics['t2m/R03'] + \
+               contrastive_metrics['t2m/R05'] + contrastive_metrics['m2t/R10'] + contrastive_metrics['t2m/R01'] + \
+               contrastive_metrics['m2t/R02'] + contrastive_metrics['m2t/R03'] + contrastive_metrics['m2t/R05'] + \
+               contrastive_metrics['m2t/R10']
+        contrastive_metrics['Rsum'] = Rsum
+        wandb.log(contrastive_metrics)
 
         for loss_name in sorted(contrastive_metrics):
             loss_val = contrastive_metrics[loss_name]
