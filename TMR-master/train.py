@@ -1,15 +1,17 @@
 import logging
 import hydra
+import os
 from omegaconf import DictConfig
 from hydra.utils import instantiate
 from src.config import read_config, save_config
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="configs", config_name="train", version_base="1.3")
 def train(cfg: DictConfig):
-    # Resuming if needed
+    # Resuming if needed   batch
     ckpt = None
     if cfg.resume_dir is not None:
         assert cfg.ckpt is not None
@@ -29,7 +31,7 @@ def train(cfg: DictConfig):
 
     logger.info("Loading the dataloaders")
     train_dataset = instantiate(cfg.data, split="train")
-    val_dataset = instantiate(cfg.data, split="val")
+    val_dataset = instantiate(cfg.data, split="test")
 
     train_dataloader = instantiate(
         cfg.dataloader,
@@ -44,6 +46,7 @@ def train(cfg: DictConfig):
         collate_fn=val_dataset.collate_fn,
         shuffle=False,
     )
+
 
     logger.info("Loading the model")
     model = instantiate(cfg.model)

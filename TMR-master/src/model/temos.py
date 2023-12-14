@@ -33,7 +33,7 @@ class TEMOS(LightningModule):
         text_encoder: a module to encode the text embeddings in the latent space (required).
         motion_decoder: a module to decode the latent vector into motion features (required).
         vae: a boolean to make the model probabilistic (required).
-        fact: a scaling factor for sampling the VAE (optional).
+        fact: a scaling factor for sampling the VAE (optional).  mp4
         sample_mean: sample the mean vector instead of random sampling (optional).
         lmd: dictionary of losses weights (optional).
         lr: learninig rate for the optimizer (optional).
@@ -100,6 +100,7 @@ class TEMOS(LightningModule):
     def encode(
         self,
         inputs,
+        text_motion_feature:Optional[Tensor] = None,
         modality: str = "auto",
         sample_mean: Optional[bool] = None,
         fact: Optional[float] = None,
@@ -110,14 +111,21 @@ class TEMOS(LightningModule):
 
         # Encode the inputs
         encoder = self._find_encoder(inputs, modality)
-        encoded = encoder(inputs)
+        encoded,mean_tokens_pooled_final = encoder(inputs)
 
         # Sampling
         if self.vae:
             dists = encoded.unbind(1)
             mu, logvar = dists
+            if text_motion_feature!=None:
+                #mu=torch.concat((mu,text_motion_feature),dim=-1)
+                #logvar=torch.concat((logvar,text_motion_feature),dim=-1)
+                #dists=(mu,logvar)
+                mu=mu+text_motion_feature
+                dists = (mu, logvar)
+                #mu=mu+mot_feature_dict
             if sample_mean:
-                latent_vectors = mu
+                latent_vectors = dists[0]
             else:
                 # Reparameterization trick
                 std = logvar.exp().pow(0.5)
@@ -128,9 +136,9 @@ class TEMOS(LightningModule):
             (latent_vectors,) = encoded.unbind(1)
 
         if return_distribution:
-            return latent_vectors, dists
+            return latent_vectors, dists,mean_tokens_pooled_final
 
-        return latent_vectors
+        return latent_vectors,mean_tokens_pooled_final
 
     def decode(
         self,
@@ -147,6 +155,7 @@ class TEMOS(LightningModule):
     def forward(
         self,
         inputs,
+        text_motion_feature:Optional[Tensor] = None,
         lengths: Optional[List[int]] = None,
         mask: Optional[Tensor] = None,
         sample_mean: Optional[bool] = None,
@@ -154,14 +163,14 @@ class TEMOS(LightningModule):
         return_all: bool = False,
     ) -> List[Tensor]:
         # Encoding the inputs and sampling if needed
-        latent_vectors, distributions = self.encode(
-            inputs, sample_mean=sample_mean, fact=fact, return_distribution=True
+        latent_vectors, distributions,mean_tokens_pooled_final= self.encode(
+            inputs,text_motion_feature, sample_mean=sample_mean, fact=fact, return_distribution=True
         )
         # Decoding the latent vector: generating motions
         motions = self.decode(latent_vectors, lengths, mask)
 
         if return_all:
-            return motions, latent_vectors, distributions
+            return motions, latent_vectors, distributions,mean_tokens_pooled_final
 
         return motions
 

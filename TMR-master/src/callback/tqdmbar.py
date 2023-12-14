@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import TQDMProgressBar as OriginalTQDMProgressB
 def customize_bar(bar):
     if not sys.stdout.isatty():
         bar.disable = True
-    bar.leave = True  # remove the bar after completion
+    bar.leave = True  # remove the bar after completion 32
     return bar
 
 

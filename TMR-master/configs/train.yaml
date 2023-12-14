@@ -9,7 +9,7 @@ dataloader:
   num_workers: 8
 
 defaults:
-  - data: humanml3d
+  - data: kitml  #kitml
   - model: tmr
   - trainer
   - defaults

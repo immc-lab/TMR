@@ -1,9 +1,12 @@
 import os
 from omegaconf import DictConfig
 import logging
+import wandb
 import hydra
 import yaml
 from tqdm import tqdm
+import torch.nn.functional as F
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +17,14 @@ def save_metric(path, metrics):
         f.write(strings)
 
 
-def compute_sim_matrix(model, dataset, keyids, batch_size=256):
+def compute_sim_matrix(model, dataset,proj, keyids, batch_size=256):
     import torch
     import numpy as np
     from src.data.collate import collate_text_motion
     from src.model.tmr import get_sim_matrix
+    import clip
+    clip_device = "cuda" if torch.cuda.is_available() else "cpu"
+    clip_model, _ = clip.load("ViT-B/32", device=clip_device)
 
     device = model.device
 
@@ -27,32 +33,67 @@ def compute_sim_matrix(model, dataset, keyids, batch_size=256):
         all_data = [dataset.load_keyid(keyid) for keyid in keyids]
         all_data_splitted = np.array_split(all_data, nsplit)
 
-        # by batch (can be too costly on cuda device otherwise)
+        # by batch (can be too costly on cuda device otherwise)  cuda
         latent_texts = []
         latent_motions = []
         sent_embs = []
+        mot_features=[]
+        text_embs=[]
+        t_mean_tokens=[]
+        m_mean_tokens=[]
         for data in tqdm(all_data_splitted, leave=False):
             batch = collate_text_motion(data, device=device)
 
             # Text is already encoded
             text_x_dict = batch["text_x_dict"]
+            # mot模型encoder出的feature
+            # mot_feature = batch["mot_feature"]
+            # mot_feature.to(device)
+
+            #mot_feature_dict = mot_feature_dict["x"]
             motion_x_dict = batch["motion_x_dict"]
+            #mot_feature_dict=batch["mot_feature_dict"]
             sent_emb = batch["sent_emb"]
+            text = batch['text']
+            # tokenized计算
+            text_tokenized = clip.tokenize(text, truncate=True).to(clip_device)
+            with torch.no_grad():
+                # 计算sentence_feature，dim=512
+                text_emb = clip_model.encode_text(text_tokenized).float()
+            text_emb = proj(text_emb)
+           # text_emb = torch.nn.functional.normalize(text_emb, p=2, dim=1)
+
+          #  mot_feature=torch.nn.functional.normalize(mot_feature, p=2, dim=1)
 
             # Encode both motion and text
-            latent_text = model.encode(text_x_dict, sample_mean=True)
-            latent_motion = model.encode(motion_x_dict, sample_mean=True)
+            latent_text,t_mean_tokens_pooled_final = model.encode(text_x_dict,sample_mean=True)
+            latent_motion,m_mean_tokens_pooled_final = model.encode(motion_x_dict,sample_mean=True)
 
             latent_texts.append(latent_text)
             latent_motions.append(latent_motion)
             sent_embs.append(sent_emb)
+            # mot_features.append(mot_feature)
+            text_embs.append(text_emb)
 
+            #mean（tokens）append
+            t_mean_tokens.append(t_mean_tokens_pooled_final)
+            m_mean_tokens.append(m_mean_tokens_pooled_final)
+
+        t_mean_tokens=torch.cat(t_mean_tokens)
+        m_mean_tokens=torch.cat(m_mean_tokens)
         latent_texts = torch.cat(latent_texts)
         latent_motions = torch.cat(latent_motions)
         sent_embs = torch.cat(sent_embs)
+        # mot_features=torch.cat(mot_features)
+        text_embs=torch.cat(text_embs)
         sim_matrix = get_sim_matrix(latent_texts, latent_motions)
+        #mean_tokens 相似度矩阵
+        sim_matrix_tokens=get_sim_matrix(t_mean_tokens, m_mean_tokens)
+        #sim_matrix=sim_matrix_tokens+sim_matrix
+        #sim_matrix=F.softmax(sim_matrix, dim=1) * F.softmax(sim_matrix, dim=0)
+        #sim_matrix=sim_matrix/2haidai1yighui
     returned = {
-        "sim_matrix": sim_matrix.cpu().numpy(),
+        "sim_matrix": sim_matrix_tokens.cpu().numpy(),
         "sent_emb": sent_embs.cpu().numpy(),
     }
     return returned
@@ -93,6 +134,8 @@ def retrieval(newcfg: DictConfig) -> None:
 
     logger.info("Loading the model")
     model = load_model_from_cfg(cfg, ckpt_name, eval_mode=True, device=device)
+    if model.sentence_proj != None:
+        proj = model.sentence_proj
 
     datasets = {}
     results = {}
@@ -112,12 +155,12 @@ def retrieval(newcfg: DictConfig) -> None:
         if protocol not in results:
             if protocol in ["normal", "threshold"]:
                 res = compute_sim_matrix(
-                    model, dataset, dataset.keyids, batch_size=batch_size
+                    model, dataset,proj, dataset.keyids, batch_size=batch_size
                 )
                 results.update({key: res for key in ["normal", "threshold"]})
             elif protocol == "nsim":
                 res = compute_sim_matrix(
-                    model, dataset, dataset.keyids, batch_size=batch_size
+                    model, dataset,proj, dataset.keyids, batch_size=batch_size
                 )
                 results[protocol] = res
             elif protocol == "guo":
@@ -138,6 +181,7 @@ def retrieval(newcfg: DictConfig) -> None:
                     compute_sim_matrix(
                         model,
                         dataset,
+                        proj,
                         np.array(keyids)[idx_batch],
                         batch_size=batch_size,
                     )
@@ -172,6 +216,7 @@ def retrieval(newcfg: DictConfig) -> None:
             else:
                 emb, threshold = None, None
             metrics = all_contrastive_metrics(sim_matrix, emb, threshold=threshold)
+            #wandb.log(metrics)
 
         print_latex_metrics(metrics)
 

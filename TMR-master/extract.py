@@ -1,6 +1,8 @@
 import logging
 import hydra
 from omegaconf import DictConfig
+import  os
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 logger = logging.getLogger(__name__)
 

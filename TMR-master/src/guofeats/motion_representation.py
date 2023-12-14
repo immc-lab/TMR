@@ -266,9 +266,50 @@ def process_file(
     data = np.concatenate([data, local_vel], axis=-1)
     data = np.concatenate([data, feet_l, feet_r], axis=-1)
     return data, global_positions, positions, l_velocity
+def recover_rot(data):
+    bs, seq_len, dims = data.shape
+    # dataset [bs, seqlen, 263/251] HumanML/KIT
+    joints_num = 22 if data.shape[-1] == 263 else 21
+    r_rot_quat, r_pos = recover_root_rot_pos(data)
+    r_pos_pad = torch.cat([r_pos, torch.zeros_like(r_pos)], dim=-1).unsqueeze(-2)
+    r_rot_cont6d = quaternion_to_cont6d(r_rot_quat)
+    start_indx = 1 + 2 + 1 + (joints_num - 1) * 3
+    end_indx = start_indx + (joints_num - 1) * 6
+    cont6d_params = data[..., start_indx:end_indx]
+    cont6d_params = torch.cat([r_rot_cont6d, cont6d_params], dim=-1)
+    cont6d_params = cont6d_params.view(bs, seq_len, joints_num, 6)
+    # cont6d_params = torch.cat([cont6d_params, r_pos_pad], dim=-2)
+    return cont6d_params
 
 
-# Recover global angle and positions for rotation data
+def recover_rot_pos(data):
+    """
+    Same as recover_rot but include in the final features also the rifke positions (6+3 features for each joint)
+    """
+    bs, seq_len, dims = data.shape
+    # dataset [bs, seqlen, 263/251] HumanML/KIT
+    joints_num = 22 if data.shape[-1] == 263 else 21
+    r_rot_quat, r_pos = recover_root_rot_pos(data)
+
+    # get cont6d for each joint
+    r_rot_cont6d = quaternion_to_cont6d(r_rot_quat)
+    start_indx = 1 + 2 + 1 + (joints_num - 1) * 3
+    end_indx = start_indx + (joints_num - 1) * 6
+    cont6d_params = data[..., start_indx:end_indx]
+    cont6d_params = torch.cat([r_rot_cont6d, cont6d_params], dim=-1)
+    cont6d_params = cont6d_params.view(bs, seq_len, joints_num, 6)
+
+    # get rifke pos for each joint
+    start_indx = 1 + 2 + 1
+    end_indx = start_indx + (joints_num - 1) * 3
+    pos_params = data[..., start_indx:end_indx]
+    pos_params = torch.cat([r_pos, pos_params], dim=-1)
+    pos_params = pos_params.view(bs, seq_len, joints_num, 3)
+
+    rot_pos = torch.cat([cont6d_params, pos_params], dim=-1)    # bs x seqlen x num_joints x 9
+    return rot_pos
+
+# Recover global angle and positions for rotation data  21
 # root_rot_velocity (B, seq_len, 1)
 # root_linear_velocity (B, seq_len, 2)
 # root_y (B, seq_len, 1)

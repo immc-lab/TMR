@@ -36,15 +36,15 @@ class PositionalEncoding(nn.Module):
 class ACTORStyleEncoder(nn.Module):
     # Similar to ACTOR but "action agnostic" and more general
     def __init__(
-        self,
-        nfeats: int,
-        vae: bool,
-        latent_dim: int = 256,
-        ff_size: int = 1024,
-        num_layers: int = 4,
-        num_heads: int = 4,
-        dropout: float = 0.1,
-        activation: str = "gelu",
+            self,
+            nfeats: int,
+            vae: bool,
+            latent_dim: int = 256,
+            ff_size: int = 1024,
+            num_layers: int = 4,
+            num_heads: int = 4,
+            dropout: float = 0.1,
+            activation: str = "gelu",
     ) -> None:
         super().__init__()
 
@@ -90,21 +90,29 @@ class ACTORStyleEncoder(nn.Module):
         # add positional encoding
         xseq = self.sequence_pos_encoding(xseq)
         final = self.seqTransEncoder(xseq, src_key_padding_mask=~aug_mask)
-        return final[:, : self.nbtokens]
+        # 添加mean_token
+        final_tokens = final[:, self.nbtokens:]
+        mean_tokens_pooled_final = torch.mean(final_tokens, dim=1)
+
+        #考虑mean tokens时的mask
+        # tokens_aug_mask = aug_mask[:, self.nbtokens:]
+        # mean_tokens_pooled_final = final_tokens.masked_fill(~tokens_aug_mask.unsqueeze(-1), 0)
+        # mean_tokens_pooled_final = torch.mean(mean_tokens_pooled_final, dim=1)
+        return final[:, : self.nbtokens], mean_tokens_pooled_final
 
 
 class ACTORStyleDecoder(nn.Module):
     # Similar to ACTOR Decoder
 
     def __init__(
-        self,
-        nfeats: int,
-        latent_dim: int = 256,
-        ff_size: int = 1024,
-        num_layers: int = 4,
-        num_heads: int = 4,
-        dropout: float = 0.1,
-        activation: str = "gelu",
+            self,
+            nfeats: int,
+            latent_dim: int = 256,
+            ff_size: int = 1024,
+            num_layers: int = 4,
+            num_heads: int = 4,
+            dropout: float = 0.1,
+            activation: str = "gelu",
     ) -> None:
         super().__init__()
         output_feats = nfeats

@@ -2,6 +2,7 @@ import os
 import codecs as cs
 import orjson  # loading faster than json
 import json
+import torch
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -84,6 +85,8 @@ class TextMotionDataset(Dataset):
         index = 0
         if self.is_training:
             index = np.random.randint(len(annotations["annotations"]))
+        #infer时返回最长的索引 性能会显著提高
+        #index = max(range(len(annotations["annotations"])), key=lambda i: len(annotations["annotations"][i]['text']))
         annotation = annotations["annotations"][index]
 
         text = annotation["text"]
@@ -94,6 +97,21 @@ class TextMotionDataset(Dataset):
             end=annotation["end"],
         )
         sent_emb = self.text_to_sent_emb(text)
+        #添加mot_feature dim=256
+        file_name = "ids.txt"  # 文件名
+
+        # 打开文件并写入 ID
+
+        # mot_feature_path= '/sda/home/shihaoyu/Projects/MOT/dataset/HumanML3D/mot_encoder_feature_new/'+keyid + '.npy'
+        # if os.path.exists(mot_feature_path)==False:
+        #     print(keyid)
+        #
+        # mot_feature = np.load(mot_feature_path)
+        # mot_feature = torch.from_numpy(mot_feature).to(torch.float)
+        # mot_feature = mot_feature
+
+
+
 
         output = {
             "motion_x_dict": motion_x_dict,
@@ -101,6 +119,7 @@ class TextMotionDataset(Dataset):
             "text": text,
             "keyid": keyid,
             "sent_emb": sent_emb,
+            # "mot_feature":mot_feature
         }
         return output
 
